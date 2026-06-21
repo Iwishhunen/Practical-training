@@ -23,8 +23,8 @@ public class UserManager {
         this.currentUser = null;
         this.nextUserId = 1;
 
-        // 预置默认用户
-        addUserInternal("root", "root123", (byte) DiskConstants.ROOT_USER_ID);
+        // root 是系统管理员，home 设为 "/"，不占用 /home 目录
+        addUserInternal("root", "root123", (byte) DiskConstants.ROOT_USER_ID, "/");
         addUserInternal("admin", "admin123", (byte) 1);
         addUserInternal("user1", "111111", (byte) 2);
         nextUserId = 3;
@@ -78,9 +78,9 @@ public class UserManager {
             int homeBlock = rr.entry.getStartBlock() & 0xFF;
             // 为每个用户创建主目录
             for (User user : userCache.values()) {
+                if (user.getUserId() == 0) continue; // root 不需要 home 目录
                 var ur = fs.findInDir(homeBlock, user.getUsername());
                 if (!ur.found) {
-                    // cd 到 home，创建用户目录
                     fs.cd("home");
                     String r = fs.mkdir(user.getUsername(), user.getUserId());
                     sb.append(r).append("\n");
@@ -94,6 +94,7 @@ public class UserManager {
     }
 
     private void ensureUserHome(User user) {
+        if (user.getUserId() == 0) return; // root 不需要 home
         // 确保 /home 存在
         var rr = fs.findInDir(DiskConstants.ROOT_DIR_BLOCK, "home");
         if (!rr.found) {
@@ -114,6 +115,10 @@ public class UserManager {
 
     private void addUserInternal(String username, String password, byte userId) {
         User user = new User(userId, username, password);
+        userCache.put(username, user);
+    }
+    private void addUserInternal(String username, String password, byte userId, String homeDir) {
+        User user = new User(userId, username, User.hashPassword(password), homeDir);
         userCache.put(username, user);
     }
 

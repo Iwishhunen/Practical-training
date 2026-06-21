@@ -73,10 +73,30 @@ public class FileTablePanel extends JPanel {
         bindKey("ENTER", "open", this::openSelected);
         bindKey("DELETE", "delete", this::deleteSelected);
         bindKey("F2", "rename", this::renameSelected);
+        // Ctrl+C=复制, Ctrl+X=剪切, Ctrl+V=粘贴
+        bindKey("ctrl C", "copy", () -> {
+            DirectoryEntry s = getSelectedEntry();
+            if (s != null) mainFrame.doCopy(s.getFileName());
+        });
+        bindKey("ctrl X", "cut", () -> {
+            DirectoryEntry s = getSelectedEntry();
+            if (s != null) mainFrame.doCut(s.getFileName());
+        });
+        bindKey("ctrl V", "paste", mainFrame::doPaste);
 
         // 右键菜单
         JPopupMenu popup = new JPopupMenu();
         popup.add(mi("Open", this::openSelected));
+        popup.addSeparator();
+        popup.add(mi("Copy", () -> {
+            DirectoryEntry s = getSelectedEntry();
+            if (s != null) mainFrame.doCopy(s.getFileName());
+        }));
+        popup.add(mi("Cut", () -> {
+            DirectoryEntry s = getSelectedEntry();
+            if (s != null) mainFrame.doCut(s.getFileName());
+        }));
+        popup.add(mi("Paste", mainFrame::doPaste));
         popup.addSeparator();
         popup.add(mi("New File", mainFrame::doNewFile));
         popup.add(mi("New Folder", mainFrame::doNewDir));
@@ -121,7 +141,17 @@ public class FileTablePanel extends JPanel {
 
     public void refresh() {
         tableModel.setRowCount(0);
-        currentEntries = fs.listDir();
+        java.util.List<DirectoryEntry> all = fs.listDir();
+        // UI 层强制权限过滤
+        int uid = fs.getCurrentUserId();
+        String curPath = fs.getCurrentPath();
+        currentEntries = new java.util.ArrayList<>();
+        for (DirectoryEntry e : all) {
+            if (uid <= 1) currentEntries.add(e);
+            else if ((e.getOwnerId() & 0xFF) == uid) currentEntries.add(e);
+            else if ("shared".equals(e.getFileName())) currentEntries.add(e);
+            else if ("home".equals(e.getFileName()) && "/".equals(curPath)) currentEntries.add(e);
+        }
         for (DirectoryEntry e : currentEntries) {
             tableModel.addRow(new Object[]{
                 e.getFileName(),

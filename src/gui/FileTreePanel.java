@@ -101,6 +101,36 @@ public class FileTreePanel extends JPanel {
 
         popup.addSeparator();
 
+        JMenuItem copy = new JMenuItem("Copy");
+        copy.addActionListener(e -> {
+            DirNode dn = getRightClickedDirNode();
+            if (dn == null || dn.isRoot || dn.isDir) return;
+            navigateToParentOfRightClicked();
+            mainFrame.doCopy(dn.name);
+        });
+        popup.add(copy);
+
+        JMenuItem cut = new JMenuItem("Cut");
+        cut.addActionListener(e -> {
+            DirNode dn = getRightClickedDirNode();
+            if (dn == null || dn.isRoot || dn.isDir) return;
+            navigateToParentOfRightClicked();
+            mainFrame.doCut(dn.name);
+        });
+        popup.add(cut);
+
+        JMenuItem paste = new JMenuItem("Paste");
+        paste.addActionListener(e -> {
+            DirNode dn = getRightClickedDirNode();
+            if (dn == null) return;
+            if (!dn.isDir) navigateToParentOfRightClicked();
+            else onDirSelected.accept(dn.fullPath);
+            mainFrame.doPaste();
+        });
+        popup.add(paste);
+
+        popup.addSeparator();
+
         JMenuItem rename = new JMenuItem("Rename");
         rename.addActionListener(e -> {
             DirNode dn = getRightClickedDirNode();
@@ -191,7 +221,16 @@ public class FileTreePanel extends JPanel {
 
     private void buildChildren(DefaultMutableTreeNode parent, FileSystem fs,
                                int dirBlock, String parentPath) {
-        for (DirectoryEntry e : fs.listDir(dirBlock)) {
+        int uid = fs.getCurrentUserId();
+        for (DirectoryEntry e : fs.listDir(dirBlock, parentPath)) {
+            // UI 层强制权限过滤
+            if (uid > 1) {
+                int owner = e.getOwnerId() & 0xFF;
+                boolean allow = (owner == uid)
+                        || "shared".equals(e.getFileName())
+                        || ("home".equals(e.getFileName()) && "/".equals(parentPath));
+                if (!allow) continue;
+            }
             String full = parentPath.equals("/") ? "/" + e.getFileName()
                     : parentPath + "/" + e.getFileName();
             DefaultMutableTreeNode child;

@@ -24,16 +24,32 @@ public class MainFrame extends JFrame {
     JLabel statusLabel, freeSpaceLabel;
     JTextField cmdField;
 
+    // 剪贴板（用于 Copy/Cut → Paste）
+    String clipboardFile;
+    String clipboardSrcPath; // 源文件所在目录的完整路径
+    boolean clipboardCut;    // true=移动, false=复制
+
     public MainFrame(FileSystem fs, UserManager um, Disk disk) {
         super("Multi-User Multi-Level Directory File System");
         this.fs = fs; this.userManager = um; this.disk = disk;
         initUI();
+        initSharedDir();
         setSize(1000, 700);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
             public void windowClosing(WindowEvent e) { doExit(); }
         });
+    }
+
+    /** 初始化 /shared 共享目录（多用户可读写） */
+    void initSharedDir() {
+        fs.cd("/");
+        var rr = fs.findInDir(fs.getCurrentDirBlock(), "shared");
+        if (!rr.found) {
+            fs.mkdir("shared", (byte) 0);
+        }
+        fs.cd("/");
     }
 
     void initUI() {
@@ -124,14 +140,16 @@ public class MainFrame extends JFrame {
         if (!checkLogin()) return;
         String n = JOptionPane.showInputDialog(this, "File name (max 8 chars):");
         if (n != null && !n.trim().isEmpty()) {
-            msg(fs.createFile(n.trim(), userManager.getCurrentUser().getUserId())); refreshAll();
+            setStatus(fs.createFile(n.trim(), userManager.getCurrentUser().getUserId()));
+            refreshAll();
         }
     }
     public void doNewDir() {
         if (!checkLogin()) return;
         String n = JOptionPane.showInputDialog(this, "Dir name (max 8 chars):");
         if (n != null && !n.trim().isEmpty()) {
-            msg(fs.mkdir(n.trim(), userManager.getCurrentUser().getUserId())); refreshAll();
+            setStatus(fs.mkdir(n.trim(), userManager.getCurrentUser().getUserId()));
+            refreshAll();
         }
     }
     void doDelete() {
@@ -144,13 +162,85 @@ public class MainFrame extends JFrame {
         }
     }
 
-    /** 按名称删除（供树右键菜单调用） */
+    /** 按名称删除 */
     public void doDeleteByName(String name) {
         if (!checkLogin()) return;
         DirectoryEntry e = findEntry(name);
         String r = (e != null && e.isDirectory()) ? fs.rmdir(name) : fs.deleteFile(name);
-        msg(r);
+        setStatus(r);
         refreshAll();
+    }
+
+    // ====== Copy / Cut / Paste ======
+
+    /** 复制：将文件放入剪贴板 */
+    public void doCopy(String name) {
+        if (!checkLogin()) return;
+        DirectoryEntry e = findEntry(name);
+        if (e == null || e.isDirectory()) { setStatus("Cannot copy directory"); return; }
+        clipboardFile = name;
+        clipboardSrcPath = fs.getCurrentPath();
+        clipboardCut = false;
+        setStatus("Copied: " + clipboardSrcPath + "/" + name + "  →  ready to Paste");
+    }
+
+    /** 剪切：将文件放入剪贴板 */
+    public void doCut(String name) {
+        if (!checkLogin()) return;
+        DirectoryEntry e = findEntry(name);
+        if (e == null || e.isDirectory()) { setStatus("Cannot cut directory"); return; }
+        clipboardFile = name;
+        clipboardSrcPath = fs.getCurrentPath();
+        clipboardCut = true;
+        setStatus("Cut: " + clipboardSrcPath + "/" + name + "  →  ready to Paste");
+    }
+
+    /** 粘贴：从剪贴板复制/移动文件到当前目录 */
+    public void doPaste() {
+        if (!checkLogin()) return;
+        if (clipboardFile == null) { setStatus("Nothing to paste"); return; }
+
+        String destPath = fs.getCurrentPath();
+        byte ownerId = userManager.getCurrentUser().getUserId();
+
+        // 1. 跳到源目录，读取文件内容
+        fs.cd(clipboardSrcPath);
+        String content = fs.readFile(clipboardFile);
+        if (content.startsWith("Error")) {
+            setStatus("Paste failed: source not found"); return;
+        }
+
+        // 2. 跳到目标目录，创建文件
+        fs.cd(destPath);
+        String name = clipboardFile;
+        // 检查重名
+        if (fs.findInDir(fs.getCurrentDirBlock(), name).found) {
+            name = "copy_" + name;
+        }
+        String r = fs.writeFile(name, content, ownerId);
+
+        // 3. 如果是剪切，删除源文件
+        if (!r.startsWith("Error") && clipboardCut) {
+            fs.cd(clipboardSrcPath);
+            fs.deleteFile(clipboardFile);
+            clipboardFile = null;
+            r = "move ok: " + clipboardSrcPath + "/" + clipboardFile + " → " + destPath + "/" + name;
+        }
+
+        setStatus(r);
+        refreshAll();
+    }
+
+    // ====== 状态栏反馈 ======
+    void setStatus(String msg) {
+        statusLabel.setText(" " + msg);
+        // 3秒后恢复
+        javax.swing.Timer timer = new javax.swing.Timer(4000, e ->
+            statusLabel.setText(" Path: " + fs.getCurrentPath()
+                + (userManager.isLoggedIn() ? "  |  User: "
+                + userManager.getCurrentUser().getUsername() : "  |  (guest)")));
+        timer.setRepeats(false);
+        timer.start();
     }
 
     /** 显示文件属性 */
@@ -160,13 +250,12 @@ public class MainFrame extends JFrame {
         msg(fs.getFileInfo(name));
     }
 
-    /** 重命名 */
     public void doRename(String oldName) {
         if (!checkLogin()) return;
         String newName = JOptionPane.showInputDialog(this,
                 "Rename '" + oldName + "' to:", oldName);
         if (newName != null && !newName.trim().isEmpty() && !newName.trim().equals(oldName)) {
-            msg(fs.rename(oldName, newName.trim()));
+            setStatus(fs.rename(oldName, newName.trim()));
             refreshAll();
         }
     }
@@ -212,6 +301,7 @@ public class MainFrame extends JFrame {
         catch (IOException ex) { msg("Save error: " + ex.getMessage()); }
     }
     void doFormat() {
+        if (!fs.isRoot()) { setStatus("Error: only root can format disk"); return; }
         if (JOptionPane.showConfirmDialog(this, "Format? All data lost!",
                 "Confirm", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
             fs.initFileSystem(); userManager.createAllUserDirectories();
@@ -226,6 +316,9 @@ public class MainFrame extends JFrame {
     }
     void doLogin() {
         new LoginDialog(this, userManager).setVisible(true);
+        if (userManager.isLoggedIn()) {
+            fs.setCurrentUser(userManager.getCurrentUser().getUserId() & 0xFF);
+        }
         refreshAll();
     }
     void doLogout() {
@@ -235,6 +328,7 @@ public class MainFrame extends JFrame {
         }
         String username = userManager.getCurrentUser().getUsername();
         userManager.logout();
+        fs.setCurrentUser(999); // Guest: 无权限
         fs.cd("/");
         refreshAll();
 
@@ -392,6 +486,8 @@ public class MainFrame extends JFrame {
 
     public void refreshAll() {
         treePanel.refresh(fs); tablePanel.refresh();
+        setTitle("Multi-User File System  |  UID=" + fs.getCurrentUserId()
+                + (fs.isRoot() ? " (root)" : fs.isAdmin() ? " (admin)" : " (user)"));
         User cu = userManager.getCurrentUser();
         statusLabel.setText(" Path: " + fs.getCurrentPath()
                 + (cu != null ? "  |  User: " + cu.getUsername() : "  |  (guest)"));

@@ -10,7 +10,6 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.IOException;
-import java.util.List;
 
 /**
  * 主窗口。集成菜单栏、工具栏、文件树/表格、命令行和状态栏。
@@ -74,10 +73,12 @@ public class MainFrame extends JFrame {
         um.add(mi("Users", this::showUsers));
         mb.add(um);
         JMenu hm = new JMenu("Help");
+        hm.add(mi("System Help", this::showHelp));
         hm.add(mi("About", () -> JOptionPane.showMessageDialog(this,
                 "Multi-User Multi-Level Directory File System\n" +
                 "128 blocks x 64 bytes = 8KB Disk, FAT allocation\n" +
-                "Ref: sensnow/os-system-exp (SCAU)\nJDK 17 + Swing",
+                "Reference: sensnow/os-system-exp (SCAU)\n" +
+                "JDK 17 + Swing | Kaisheng Xu",
                 "About", JOptionPane.INFORMATION_MESSAGE)));
         mb.add(hm);
         return mb;
@@ -152,11 +153,50 @@ public class MainFrame extends JFrame {
         refreshAll();
     }
 
-    /** 显示文件属性（供树右键菜单调用） */
+    /** 显示文件属性 */
     public void showFileInfo(String name) {
         DirectoryEntry e = findEntry(name);
         if (e == null) { msg("Not found: " + name); return; }
         msg(fs.getFileInfo(name));
+    }
+
+    /** 重命名 */
+    public void doRename(String oldName) {
+        if (!checkLogin()) return;
+        String newName = JOptionPane.showInputDialog(this,
+                "Rename '" + oldName + "' to:", oldName);
+        if (newName != null && !newName.trim().isEmpty() && !newName.trim().equals(oldName)) {
+            msg(fs.rename(oldName, newName.trim()));
+            refreshAll();
+        }
+    }
+
+    /** 空闲块数 */
+    public int getFreeBlocks() { return disk.getFreeBlockCount(); }
+
+    /** 修改文件属性 */
+    public void doChmod(String name) {
+        if (!checkLogin()) return;
+        DirectoryEntry e = findEntry(name);
+        if (e == null) { msg("Not found"); return; }
+
+        JPanel panel = new JPanel(new GridLayout(2, 1, 5, 5));
+        JCheckBox readOnlyCb = new JCheckBox("Read-Only", e.isReadOnly());
+        JCheckBox hiddenCb = new JCheckBox("Hidden",
+                (e.getAttributes() & DiskConstants.ATTR_HIDDEN) != 0);
+        panel.add(readOnlyCb);
+        panel.add(hiddenCb);
+
+        int result = JOptionPane.showConfirmDialog(this, panel,
+                "Change Attributes: " + name,
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result == JOptionPane.OK_OPTION) {
+            byte attrs = 0;
+            if (readOnlyCb.isSelected()) attrs |= DiskConstants.ATTR_READONLY;
+            if (hiddenCb.isSelected()) attrs |= DiskConstants.ATTR_HIDDEN;
+            msg(fs.setAttribute(name, attrs));
+            refreshAll();
+        }
     }
 
     public void openFile(String name) {
@@ -218,6 +258,79 @@ public class MainFrame extends JFrame {
     }
     void showUsers() { msg(userManager.getUsersInfo()); }
     void showDiskUsage() { new DiskUsagePanel(this, fs, disk).setVisible(true); }
+
+    void showHelp() {
+        String help = """
+            ╔══════════════════════════════════════════════╗
+            ║  多用户多级目录文件系统 — 系统说明          ║
+            ╚══════════════════════════════════════════════╝
+
+            ┌─ 系统概述 ──────────────────────────┐
+            │ 模拟操作系统的文件管理功能             │
+            │ 支持多用户、多级目录、GUI 图形界面      │
+            │ 磁盘: 128块 x 64字节 = 8KB           │
+            │ 分配: FAT表（显式链接）                │
+            │ 目录项: 16字节（8B名+类型+属性+大小）   │
+            └────────────────────────────────────┘
+
+            ┌─ 用户命令 ──────────────────────────┐
+            │ login   <user> <pass>   用户登录     │
+            │ logout                  用户登出     │
+            │ register <user> <pass>  注册新用户   │
+            └────────────────────────────────────┘
+
+            ┌─ 目录命令 ──────────────────────────┐
+            │ mkdir <name>            创建目录     │
+            │ cd   <path>             切换目录     │
+            │ dir / ls                列出目录内容 │
+            │ rmdir <name>            删除空目录   │
+            └────────────────────────────────────┘
+
+            ┌─ 文件命令 ──────────────────────────┐
+            │ create <name>           创建文件     │
+            │ open   <name>           打开文件     │
+            │ read   <name>           读取内容     │
+            │ write  <name>           写入文件     │
+            │ close  <name>           关闭文件     │
+            │ delete <name>           删除文件     │
+            │ rename <old> <new>      重命名       │
+            └────────────────────────────────────┘
+
+            ┌─ 系统命令 ──────────────────────────┐
+            │ format                  格式化磁盘   │
+            │ save                    保存到文件   │
+            │ help                    显示帮助     │
+            │ exit / quit             退出程序     │
+            └────────────────────────────────────┘
+
+            ┌─ 键盘快捷键 ───────────────────────┐
+            │ Enter   打开文件/进入目录            │
+            │ Delete  删除选中项                  │
+            │ F2      重命名                      │
+            │ Ctrl+S  保存文件（编辑器中）         │
+            └────────────────────────────────────┘
+
+            ┌─ 默认用户 ─────────────────────────┐
+            │ root   / root123    (管理员)        │
+            │ admin  / admin123   (管理员)        │
+            │ user1  / 111111     (普通用户)      │
+            └────────────────────────────────────┘
+
+            ┌─ 文件属性 ─────────────────────────┐
+            │ R = 只读 (Read-Only)               │
+            │ H = 隐藏 (Hidden)                  │
+            │ 可通过右键 → Change Attributes 修改 │
+            └────────────────────────────────────┘
+            """;
+        JTextArea ta = new JTextArea(help);
+        ta.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        ta.setEditable(false);
+        ta.setBackground(new Color(250, 250, 250));
+        JScrollPane sp = new JScrollPane(ta);
+        sp.setPreferredSize(new Dimension(580, 500));
+        JOptionPane.showMessageDialog(this, sp,
+                "System Help", JOptionPane.INFORMATION_MESSAGE);
+    }
 
     void execCmd(String cmd) {
         if (cmd == null || cmd.trim().isEmpty()) return;

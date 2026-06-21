@@ -210,6 +210,37 @@ public class FileSystem {
                 + "\nStart block: " + (e.getStartBlock() & 0xFF);
     }
 
+    /** 修改文件属性 */
+    public String setAttribute(String name, byte attrs) {
+        PathResolver.ResolveResult rr = resolver.findInDirectory(currentDirBlock, name);
+        if (!rr.found) return "Error: not found";
+        rr.entry.setAttributes(attrs);
+        byte[] blk = disk.readBlock(rr.entryBlock);
+        byte[] eb = rr.entry.toBytes();
+        System.arraycopy(eb, 0, blk, rr.entryIndex * DiskConstants.DIR_ENTRY_SIZE,
+                DiskConstants.DIR_ENTRY_SIZE);
+        disk.writeBlock(rr.entryBlock, blk);
+        return "attr ok: " + name;
+    }
+
+    /** 重命名 */
+    public String rename(String oldName, String newName) {
+        if (newName == null || newName.isEmpty()
+                || newName.length() > DiskConstants.MAX_FILENAME_LEN)
+            return "Error: invalid new name";
+        PathResolver.ResolveResult rr = resolver.findInDirectory(currentDirBlock, oldName);
+        if (!rr.found) return "Error: not found";
+        if (resolver.findInDirectory(currentDirBlock, newName).found)
+            return "Error: name exists";
+        rr.entry.setFileName(newName);
+        byte[] blk = disk.readBlock(rr.entryBlock);
+        byte[] eb = rr.entry.toBytes();
+        System.arraycopy(eb, 0, blk, rr.entryIndex * DiskConstants.DIR_ENTRY_SIZE,
+                DiskConstants.DIR_ENTRY_SIZE);
+        disk.writeBlock(rr.entryBlock, blk);
+        return "rename ok: " + oldName + " → " + newName;
+    }
+
     public int getFreeBlockCount() { return disk.getFreeBlockCount(); }
     public int getTotalBlockCount() { return DiskConstants.BLOCK_COUNT; }
 

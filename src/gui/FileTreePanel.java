@@ -10,7 +10,7 @@ import java.awt.event.*;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** 左侧目录树面板（JTree），支持右键菜单创建/删除 */
+/** 左侧目录树面板（JTree），仿 Windows 资源管理器风格 */
 public class FileTreePanel extends JPanel {
 
     private JTree tree;
@@ -19,52 +19,52 @@ public class FileTreePanel extends JPanel {
     private final Consumer<String> onDirSelected;
     private final MainFrame mainFrame;
     private FileSystem fs;
+    private volatile DefaultMutableTreeNode rightClickedNode;
 
     public FileTreePanel(FileSystem fs, Consumer<String> onDirSelected, MainFrame mainFrame) {
         super(new BorderLayout());
         this.fs = fs;
         this.onDirSelected = onDirSelected;
         this.mainFrame = mainFrame;
-        setBorder(BorderFactory.createTitledBorder("Directory Tree"));
-        rootNode = new DefaultMutableTreeNode(
-                new DirNode("/", DiskConstants.ROOT_DIR_BLOCK, true, true, "/"));
+        setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("Folders"),
+                BorderFactory.createEmptyBorder(2, 2, 2, 2)));
+
+        rootNode = new DefaultMutableTreeNode(new DirNode("/",
+                DiskConstants.ROOT_DIR_BLOCK, true, true, "/"));
         treeModel = new DefaultTreeModel(rootNode);
         tree = new JTree(treeModel);
         tree.setRootVisible(true);
         tree.setShowsRootHandles(true);
-        tree.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        tree.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         tree.setCellRenderer(new DirTreeCellRenderer());
 
-        // 单击选择 → 导航到该目录
-        tree.addTreeSelectionListener(e -> {
-            DefaultMutableTreeNode node = getSelectedNode();
-            if (node == null) return;
-            if (node.getUserObject() instanceof DirNode dn && dn.isDir) {
-                expandNode(node, fs, dn.dirBlock, dn.fullPath);
-                onDirSelected.accept(dn.fullPath);
-            }
-        });
-
-        // 双击 → 目录导航 / 文件打开
+        // 鼠标事件：左键选中/双击展开，右键选中节点
         tree.addMouseListener(new MouseAdapter() {
             @Override
+            public void mousePressed(MouseEvent e) {
+                TreePath path = tree.getPathForLocation(e.getX(), e.getY());
+                if (path == null) return;
+                if (SwingUtilities.isRightMouseButton(e)) {
+                    tree.setSelectionPath(path);
+                    rightClickedNode = (DefaultMutableTreeNode) path.getLastPathComponent();
+                } else {
+                    tree.setSelectionPath(path);
+                    rightClickedNode = null;
+                }
+            }
+            @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
+                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
                     TreePath path = tree.getPathForLocation(e.getX(), e.getY());
                     if (path == null) return;
-                    DefaultMutableTreeNode node =
-                            (DefaultMutableTreeNode) path.getLastPathComponent();
+                    DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
                     if (node.getUserObject() instanceof DirNode dn) {
                         if (dn.isDir) {
+                            expandNode(node, fs, dn.dirBlock, dn.fullPath);
                             onDirSelected.accept(dn.fullPath);
                         } else {
-                            // 先导航到父目录再打开文件
-                            DefaultMutableTreeNode parent =
-                                    (DefaultMutableTreeNode) node.getParent();
-                            if (parent != null
-                                    && parent.getUserObject() instanceof DirNode pdn) {
-                                onDirSelected.accept(pdn.fullPath);
-                            }
+                            navigateToParentDir(node);
                             mainFrame.openFile(dn.name);
                         }
                     }
@@ -72,103 +72,115 @@ public class FileTreePanel extends JPanel {
             }
         });
 
-        // ====== 右键菜单 ======
-        JPopupMenu popup = new JPopupMenu();
-
-        JMenuItem newFileItem = new JMenuItem("New File");
-        newFileItem.addActionListener(e -> {
-            DirNode dn = getSelectedDirNode();
-            if (dn == null) return;
-            // 导航到选中目录
-            onDirSelected.accept(dn.fullPath);
-            mainFrame.doNewFile();
-        });
-        popup.add(newFileItem);
-
-        JMenuItem newDirItem = new JMenuItem("New Directory");
-        newDirItem.addActionListener(e -> {
-            DirNode dn = getSelectedDirNode();
-            if (dn == null) return;
-            onDirSelected.accept(dn.fullPath);
-            mainFrame.doNewDir();
-        });
-        popup.add(newDirItem);
-
-        popup.addSeparator();
-
-        JMenuItem deleteItem = new JMenuItem("Delete");
-        deleteItem.addActionListener(e -> {
-            DirNode dn = getSelectedDirNode();
-            if (dn == null) return;
-            if (dn.isRoot) {
-                JOptionPane.showMessageDialog(this,
-                        "Cannot delete root directory", "Error",
-                        JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            // 先导航到父目录再删除
+        // 左键选中非右键时导航
+        tree.addTreeSelectionListener(e -> {
             DefaultMutableTreeNode node = getSelectedNode();
-            DefaultMutableTreeNode parent =
-                    (DefaultMutableTreeNode) node.getParent();
-            if (parent != null && parent.getUserObject() instanceof DirNode pdn) {
-                onDirSelected.accept(pdn.fullPath);
-            }
-            mainFrame.doDeleteByName(dn.name);
-        });
-        popup.add(deleteItem);
-
-        popup.addSeparator();
-
-        JMenuItem refreshItem = new JMenuItem("Refresh");
-        refreshItem.addActionListener(e -> mainFrame.refreshAll());
-        popup.add(refreshItem);
-
-        JMenuItem propsItem = new JMenuItem("Properties");
-        propsItem.addActionListener(e -> {
-            DirNode dn = getSelectedDirNode();
-            if (dn == null) return;
-            if (dn.isRoot) {
-                JOptionPane.showMessageDialog(this,
-                        "Root Directory\nBlock: " + DiskConstants.ROOT_DIR_BLOCK
-                        + "\nTotal blocks: " + DiskConstants.BLOCK_COUNT,
-                        "Properties", JOptionPane.INFORMATION_MESSAGE);
-            } else {
-                DefaultMutableTreeNode node = getSelectedNode();
-                DefaultMutableTreeNode parent =
-                        (DefaultMutableTreeNode) node.getParent();
-                if (parent != null && parent.getUserObject() instanceof DirNode pdn) {
-                    onDirSelected.accept(pdn.fullPath);
-                }
-                mainFrame.showFileInfo(dn.name);
+            if (node == null || rightClickedNode != null) return;
+            if (node.getUserObject() instanceof DirNode dn && dn.isDir) {
+                expandNode(node, fs, dn.dirBlock, dn.fullPath);
+                onDirSelected.accept(dn.fullPath);
             }
         });
-        popup.add(propsItem);
 
-        tree.setComponentPopupMenu(popup);
+        buildPopupMenu();
         add(new JScrollPane(tree), BorderLayout.CENTER);
         refresh(fs);
     }
 
+    // ===== 右键菜单 =====
+    private void buildPopupMenu() {
+        JPopupMenu popup = new JPopupMenu();
+
+        JMenuItem newFile = new JMenuItem("New File");
+        newFile.addActionListener(e -> doInRightClickedDir(() -> mainFrame.doNewFile()));
+        popup.add(newFile);
+
+        JMenuItem newDir = new JMenuItem("New Folder");
+        newDir.addActionListener(e -> doInRightClickedDir(() -> mainFrame.doNewDir()));
+        popup.add(newDir);
+
+        popup.addSeparator();
+
+        JMenuItem rename = new JMenuItem("Rename");
+        rename.addActionListener(e -> {
+            DirNode dn = getRightClickedDirNode();
+            if (dn == null || dn.isRoot) return;
+            navigateToParentOfRightClicked();
+            mainFrame.doRename(dn.name);
+        });
+        popup.add(rename);
+
+        JMenuItem delete = new JMenuItem("Delete");
+        delete.addActionListener(e -> {
+            DirNode dn = getRightClickedDirNode();
+            if (dn == null || dn.isRoot) return;
+            navigateToParentOfRightClicked();
+            mainFrame.doDeleteByName(dn.name);
+        });
+        popup.add(delete);
+
+        popup.addSeparator();
+
+        JMenuItem chmod = new JMenuItem("Change Attributes");
+        chmod.addActionListener(e -> {
+            DirNode dn = getRightClickedDirNode();
+            if (dn == null || dn.isRoot) return;
+            navigateToParentOfRightClicked();
+            mainFrame.doChmod(dn.name);
+        });
+        popup.add(chmod);
+
+        JMenuItem props = new JMenuItem("Properties");
+        props.addActionListener(e -> {
+            DirNode dn = getRightClickedDirNode();
+            if (dn == null) return;
+            if (dn.isRoot) {
+                JOptionPane.showMessageDialog(this,
+                        "Root Directory\nBlock: " + DiskConstants.ROOT_DIR_BLOCK
+                        + "\nTotal blocks: " + DiskConstants.BLOCK_COUNT
+                        + "\nFree blocks: " + mainFrame.getFreeBlocks(),
+                        "Properties", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                navigateToParentOfRightClicked();
+                mainFrame.showFileInfo(dn.name);
+            }
+        });
+        popup.add(props);
+
+        tree.setComponentPopupMenu(popup);
+    }
+
+    private void doInRightClickedDir(Runnable action) {
+        DirNode dn = getRightClickedDirNode();
+        if (dn == null) return;
+        if (!dn.isDir) navigateToParentOfRightClicked();
+        else onDirSelected.accept(dn.fullPath);
+        action.run();
+    }
+
+    // ===== 导航 =====
     private DefaultMutableTreeNode getSelectedNode() {
-        TreePath path = tree.getSelectionPath();
-        return path != null ? (DefaultMutableTreeNode) path.getLastPathComponent() : null;
+        TreePath p = tree.getSelectionPath();
+        return p != null ? (DefaultMutableTreeNode) p.getLastPathComponent() : null;
     }
 
-    /** 获取选中节点的 DirNode；如果不是目录则取其父目录 */
-    private DirNode getSelectedDirNode() {
-        DefaultMutableTreeNode node = getSelectedNode();
-        if (node == null) return null;
-        if (node.getUserObject() instanceof DirNode dn) {
-            if (dn.isDir) return dn;
-            // 文件节点 → 取其父目录
-            DefaultMutableTreeNode parent = (DefaultMutableTreeNode) node.getParent();
-            if (parent != null && parent.getUserObject() instanceof DirNode pdn) return pdn;
-        }
-        return null;
+    private DirNode getRightClickedDirNode() {
+        DefaultMutableTreeNode n = rightClickedNode != null ? rightClickedNode : getSelectedNode();
+        return (n != null && n.getUserObject() instanceof DirNode dn) ? dn : null;
     }
 
-    // ====================== refresh ======================
+    private void navigateToParentOfRightClicked() {
+        DefaultMutableTreeNode n = rightClickedNode != null ? rightClickedNode : getSelectedNode();
+        if (n != null) navigateToParentDir(n);
+    }
 
+    private void navigateToParentDir(DefaultMutableTreeNode node) {
+        DefaultMutableTreeNode p = (DefaultMutableTreeNode) node.getParent();
+        if (p != null && p.getUserObject() instanceof DirNode pdn)
+            onDirSelected.accept(pdn.fullPath);
+    }
+
+    // ===== refresh =====
     public void refresh(FileSystem fs) {
         this.fs = fs;
         rootNode.removeAllChildren();
@@ -177,23 +189,21 @@ public class FileTreePanel extends JPanel {
         for (int i = 0; i < tree.getRowCount(); i++) tree.expandRow(i);
     }
 
-    private void buildChildren(DefaultMutableTreeNode parentNode, FileSystem fs,
+    private void buildChildren(DefaultMutableTreeNode parent, FileSystem fs,
                                int dirBlock, String parentPath) {
         for (DirectoryEntry e : fs.listDir(dirBlock)) {
-            String fullPath = parentPath.equals("/")
-                    ? "/" + e.getFileName()
+            String full = parentPath.equals("/") ? "/" + e.getFileName()
                     : parentPath + "/" + e.getFileName();
             DefaultMutableTreeNode child;
             if (e.isDirectory()) {
-                child = new DefaultMutableTreeNode(new DirNode(
-                        e.getFileName(), e.getStartBlock() & 0xFF,
-                        true, false, fullPath));
-                buildChildren(child, fs, e.getStartBlock() & 0xFF, fullPath);
+                child = new DefaultMutableTreeNode(new DirNode(e.getFileName(),
+                        e.getStartBlock() & 0xFF, true, false, full));
+                buildChildren(child, fs, e.getStartBlock() & 0xFF, full);
             } else {
-                child = new DefaultMutableTreeNode(new DirNode(
-                        e.getFileName(), -1, false, false, fullPath));
+                child = new DefaultMutableTreeNode(new DirNode(e.getFileName(),
+                        -1, false, false, full));
             }
-            parentNode.add(child);
+            parent.add(child);
         }
     }
 
@@ -203,44 +213,25 @@ public class FileTreePanel extends JPanel {
         buildChildren(parent, fs, dirBlock, parentPath);
     }
 
-    // ====================== 数据类 ======================
-
-    /** 树节点数据，包含完整路径 */
+    // ===== 数据类 =====
     static class DirNode {
-        String name;
-        int dirBlock;
-        boolean isDir;
-        boolean isRoot;
-        String fullPath; // 绝对路径
-
-        DirNode(String name, int dirBlock, boolean isDir, boolean isRoot, String fullPath) {
-            this.name = name; this.dirBlock = dirBlock;
-            this.isDir = isDir; this.isRoot = isRoot;
-            this.fullPath = fullPath;
+        String name; int dirBlock; boolean isDir, isRoot; String fullPath;
+        DirNode(String n, int b, boolean d, boolean r, String f) {
+            name = n; dirBlock = b; isDir = d; isRoot = r; fullPath = f;
         }
-
-        @Override
-        public String toString() {
-            if (isRoot) return name + " (root)";
-            return isDir ? "[DIR]  " + name : "[FILE] " + name;
-        }
+        @Override public String toString() { return name; }
     }
 
-    /** 自定义渲染：目录蓝色文件夹图标，文件黑色文件图标 */
     static class DirTreeCellRenderer extends DefaultTreeCellRenderer {
         @Override
         public Component getTreeCellRendererComponent(JTree tree, Object value,
-                boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
-            super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
-            if (value instanceof DefaultMutableTreeNode node
-                    && node.getUserObject() instanceof DirNode dn) {
-                if (dn.isDir) {
-                    setIcon(UIManager.getIcon("FileView.directoryIcon"));
-                    if (!sel) setForeground(new Color(0, 70, 140));
-                } else {
-                    setIcon(UIManager.getIcon("FileView.fileIcon"));
-                    if (!sel) setForeground(Color.BLACK);
-                }
+                boolean sel, boolean exp, boolean leaf, int row, boolean focus) {
+            super.getTreeCellRendererComponent(tree, value, sel, exp, leaf, row, focus);
+            if (value instanceof DefaultMutableTreeNode n
+                    && n.getUserObject() instanceof DirNode dn) {
+                setIcon(dn.isDir ? (exp ? UIManager.getIcon("Tree.openIcon")
+                        : UIManager.getIcon("Tree.closedIcon"))
+                        : UIManager.getIcon("Tree.leafIcon"));
             }
             return this;
         }

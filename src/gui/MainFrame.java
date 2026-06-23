@@ -225,11 +225,7 @@ public class MainFrame extends JFrame {
 
         // 2. 写目标文件
         fs.cd(destPath);
-        String name = srcName;
-        if (fs.findInDir(fs.getCurrentDirBlock(), name).found) {
-            name = "copy_" + name;
-        }
-        String r = fs.writeFile(name, content, ownerId);
+        String r = fs.writeFile(srcName, content, ownerId);
         if (r.startsWith("Error")) {
             JOptionPane.showMessageDialog(this, r, "Error", JOptionPane.ERROR_MESSAGE);
             refreshAll(); return;

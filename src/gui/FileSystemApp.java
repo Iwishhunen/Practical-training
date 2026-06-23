@@ -32,11 +32,8 @@ public class FileSystemApp {
         SwingUtilities.invokeLater(() -> {
             LoginDialog login = new LoginDialog(null, userManager);
             login.setVisible(true);
-            // 同步用户 ID 给文件系统
-            if (userManager.isLoggedIn()) {
-                fs.setCurrentUser(userManager.getCurrentUser().getUserId() & 0xFF);
-            } else {
-                fs.setCurrentUser(999); // Guest：无权限，什么也看不到
+            if (!userManager.isLoggedIn()) {
+                fs.setCurrentUser(999);
             }
             MainFrame mf = new MainFrame(fs, userManager, disk);
             mf.setVisible(true);

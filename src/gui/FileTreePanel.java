@@ -233,14 +233,15 @@ public class FileTreePanel extends JPanel {
             }
             String full = parentPath.equals("/") ? "/" + e.getFileName()
                     : parentPath + "/" + e.getFileName();
+            int owner = e.getOwnerId() & 0xFF;
             DefaultMutableTreeNode child;
             if (e.isDirectory()) {
                 child = new DefaultMutableTreeNode(new DirNode(e.getFileName(),
-                        e.getStartBlock() & 0xFF, true, false, full));
+                        e.getStartBlock() & 0xFF, true, false, full, owner));
                 buildChildren(child, fs, e.getStartBlock() & 0xFF, full);
             } else {
                 child = new DefaultMutableTreeNode(new DirNode(e.getFileName(),
-                        -1, false, false, full));
+                        -1, false, false, full, owner));
             }
             parent.add(child);
         }
@@ -254,11 +255,14 @@ public class FileTreePanel extends JPanel {
 
     // ===== 数据类 =====
     static class DirNode {
-        String name; int dirBlock; boolean isDir, isRoot; String fullPath;
+        String name; int dirBlock; boolean isDir, isRoot; String fullPath; int owner;
         DirNode(String n, int b, boolean d, boolean r, String f) {
-            name = n; dirBlock = b; isDir = d; isRoot = r; fullPath = f;
+            name = n; dirBlock = b; isDir = d; isRoot = r; fullPath = f; owner = -1;
         }
-        @Override public String toString() { return name; }
+        DirNode(String n, int b, boolean d, boolean r, String f, int o) {
+            name = n; dirBlock = b; isDir = d; isRoot = r; fullPath = f; owner = o;
+        }
+        @Override public String toString() { return isRoot ? name : name + " (own:" + owner + ")"; }
     }
 
     static class DirTreeCellRenderer extends DefaultTreeCellRenderer {

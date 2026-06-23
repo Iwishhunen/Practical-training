@@ -316,9 +316,6 @@ public class MainFrame extends JFrame {
     }
     void doLogin() {
         new LoginDialog(this, userManager).setVisible(true);
-        if (userManager.isLoggedIn()) {
-            fs.setCurrentUser(userManager.getCurrentUser().getUserId() & 0xFF);
-        }
         refreshAll();
     }
     void doLogout() {

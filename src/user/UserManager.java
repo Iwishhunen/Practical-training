@@ -36,6 +36,10 @@ public class UserManager {
         if (!user.checkPassword(password)) return "Error: wrong password";
         currentUser = user;
         ensureUserHome(user);
+        fs.setCurrentUser(user.getUserId() & 0xFF);
+        if (user.getUserId() != 0) {
+            fs.cd("/"); fs.cd("home"); fs.cd(user.getUsername());
+        }
         return "Login ok. Welcome, " + username + "!";
     }
 

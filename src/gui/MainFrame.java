@@ -198,36 +198,41 @@ public class MainFrame extends JFrame {
     /** 粘贴：从剪贴板复制/移动文件到当前目录 */
     public void doPaste() {
         if (!checkLogin()) return;
-        if (clipboardFile == null) { setStatus("Nothing to paste"); return; }
+        String srcName = clipboardFile;
+        String srcPath = clipboardSrcPath;
+        boolean cut = clipboardCut;
+        if (srcName == null) { setStatus("Nothing to paste"); return; }
 
         String destPath = fs.getCurrentPath();
         byte ownerId = userManager.getCurrentUser().getUserId();
 
-        // 1. 跳到源目录，读取文件内容
-        fs.cd(clipboardSrcPath);
-        String content = fs.readFile(clipboardFile);
+        // 1. 读源文件内容
+        String savedPath = fs.getCurrentPath();
+        fs.cd(srcPath);
+        String content = fs.readFile(srcName);
         if (content.startsWith("Error")) {
-            setStatus("Paste failed: source not found"); return;
+            fs.cd(savedPath);
+            setStatus("Paste failed: " + content); return;
         }
 
-        // 2. 跳到目标目录，创建文件
+        // 2. 写目标文件
         fs.cd(destPath);
-        String name = clipboardFile;
-        // 检查重名
+        String name = srcName;
         if (fs.findInDir(fs.getCurrentDirBlock(), name).found) {
             name = "copy_" + name;
         }
         String r = fs.writeFile(name, content, ownerId);
+        if (r.startsWith("Error")) { setStatus(r); refreshAll(); return; }
 
-        // 3. 如果是剪切，删除源文件
-        if (!r.startsWith("Error") && clipboardCut) {
-            fs.cd(clipboardSrcPath);
-            fs.deleteFile(clipboardFile);
+        // 3. Cut 则删源文件
+        if (cut) {
+            fs.cd(srcPath);
+            fs.deleteFile(srcName);
             clipboardFile = null;
-            r = "move ok: " + clipboardSrcPath + "/" + clipboardFile + " → " + destPath + "/" + name;
+            setStatus("move ok: " + srcPath + "/" + srcName + " → " + destPath + "/" + name);
+        } else {
+            setStatus("copy ok: " + srcName + " → " + destPath + "/" + name);
         }
-
-        setStatus(r);
         refreshAll();
     }
 

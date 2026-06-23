@@ -77,7 +77,8 @@ public class FileSystem {
 
     public List<DirectoryEntry> listDir() {
         List<DirectoryEntry> all = resolver.listEntries(currentDirBlock);
-        if (currentUserId <= 1) return all; // root/admin 看全部
+        if (currentUserId <= 1) return all;
+        if (currentPath.startsWith("/shared")) return all; // 共享目录全可见
         java.util.List<DirectoryEntry> filtered = new java.util.ArrayList<>();
         for (DirectoryEntry e : all) {
             int owner = e.getOwnerId() & 0xFF;
@@ -403,7 +404,8 @@ public class FileSystem {
 
     public List<DirectoryEntry> listDir(int blk, String parentPath) {
         List<DirectoryEntry> all = resolver.listEntries(blk);
-        if (currentUserId <= 1) return all; // root/admin 看全部
+        if (currentUserId <= 1) return all;
+        if (parentPath != null && parentPath.startsWith("/shared")) return all;
         java.util.List<DirectoryEntry> filtered = new java.util.ArrayList<>();
         for (DirectoryEntry e : all) {
             int owner = e.getOwnerId() & 0xFF;

@@ -226,7 +226,8 @@ public class FileTreePanel extends JPanel {
             // UI 层强制权限过滤
             if (uid > 1) {
                 int owner = e.getOwnerId() & 0xFF;
-                boolean allow = (owner == uid)
+                boolean allow = parentPath.startsWith("/shared")
+                        || (owner == uid)
                         || "shared".equals(e.getFileName())
                         || ("home".equals(e.getFileName()) && "/".equals(parentPath));
                 if (!allow) continue;

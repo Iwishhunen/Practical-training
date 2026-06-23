@@ -147,7 +147,7 @@ public class FileTablePanel extends JPanel {
         String curPath = fs.getCurrentPath();
         currentEntries = new java.util.ArrayList<>();
         for (DirectoryEntry e : all) {
-            if (uid <= 1) currentEntries.add(e);
+            if (uid <= 1 || curPath.startsWith("/shared")) currentEntries.add(e);
             else if ((e.getOwnerId() & 0xFF) == uid) currentEntries.add(e);
             else if ("shared".equals(e.getFileName())) currentEntries.add(e);
             else if ("home".equals(e.getFileName()) && "/".equals(curPath)) currentEntries.add(e);

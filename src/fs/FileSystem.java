@@ -28,12 +28,14 @@ public class FileSystem {
         this.currentPath = "/";
     }
 
-    /** 格式化并初始化 */
+    /** 格式化并初始化基础目录结构 */
     public void initFileSystem() {
         disk.format();
         currentDirBlock = DiskConstants.ROOT_DIR_BLOCK;
         currentPath = "/";
         openFiles.clear();
+        mkdir("home", (byte) 0);
+        mkdir("shared", (byte) 0);
     }
 
     public boolean loadFromFile(String path) {

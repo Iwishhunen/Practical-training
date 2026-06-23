@@ -176,23 +176,25 @@ public class MainFrame extends JFrame {
     /** 复制：将文件放入剪贴板 */
     public void doCopy(String name) {
         if (!checkLogin()) return;
-        DirectoryEntry e = findEntry(name);
-        if (e == null || e.isDirectory()) { setStatus("Cannot copy directory"); return; }
         clipboardFile = name;
         clipboardSrcPath = fs.getCurrentPath();
         clipboardCut = false;
-        setStatus("Copied: " + clipboardSrcPath + "/" + name + "  →  ready to Paste");
+        JOptionPane.showMessageDialog(this,
+            "Copied: " + name + "\nSource: " + clipboardSrcPath
+            + "\n\nNavigate to destination, then right-click → Paste",
+            "Copy", JOptionPane.INFORMATION_MESSAGE);
     }
 
     /** 剪切：将文件放入剪贴板 */
     public void doCut(String name) {
         if (!checkLogin()) return;
-        DirectoryEntry e = findEntry(name);
-        if (e == null || e.isDirectory()) { setStatus("Cannot cut directory"); return; }
         clipboardFile = name;
         clipboardSrcPath = fs.getCurrentPath();
         clipboardCut = true;
-        setStatus("Cut: " + clipboardSrcPath + "/" + name + "  →  ready to Paste");
+        JOptionPane.showMessageDialog(this,
+            "Cut: " + name + "\nSource: " + clipboardSrcPath
+            + "\n\nNavigate to destination, then right-click → Paste",
+            "Cut", JOptionPane.INFORMATION_MESSAGE);
     }
 
     /** 粘贴：从剪贴板复制/移动文件到当前目录 */
@@ -201,18 +203,24 @@ public class MainFrame extends JFrame {
         String srcName = clipboardFile;
         String srcPath = clipboardSrcPath;
         boolean cut = clipboardCut;
-        if (srcName == null) { setStatus("Nothing to paste"); return; }
+        if (srcName == null) {
+            JOptionPane.showMessageDialog(this, "Nothing to paste.\nUse Copy or Cut first.",
+                "Paste", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
         String destPath = fs.getCurrentPath();
         byte ownerId = userManager.getCurrentUser().getUserId();
 
-        // 1. 读源文件内容
+        // 1. 读源文件
         String savedPath = fs.getCurrentPath();
         fs.cd(srcPath);
         String content = fs.readFile(srcName);
         if (content.startsWith("Error")) {
             fs.cd(savedPath);
-            setStatus("Paste failed: " + content); return;
+            JOptionPane.showMessageDialog(this, "Paste failed: " + content,
+                "Error", JOptionPane.ERROR_MESSAGE);
+            return;
         }
 
         // 2. 写目标文件
@@ -222,16 +230,23 @@ public class MainFrame extends JFrame {
             name = "copy_" + name;
         }
         String r = fs.writeFile(name, content, ownerId);
-        if (r.startsWith("Error")) { setStatus(r); refreshAll(); return; }
+        if (r.startsWith("Error")) {
+            JOptionPane.showMessageDialog(this, r, "Error", JOptionPane.ERROR_MESSAGE);
+            refreshAll(); return;
+        }
 
-        // 3. Cut 则删源文件
+        // 3. Cut → 删源文件
         if (cut) {
             fs.cd(srcPath);
             fs.deleteFile(srcName);
             clipboardFile = null;
-            setStatus("move ok: " + srcPath + "/" + srcName + " → " + destPath + "/" + name);
+            JOptionPane.showMessageDialog(this,
+                "Moved: " + srcName + "\n" + srcPath + " → " + destPath,
+                "Paste", JOptionPane.INFORMATION_MESSAGE);
         } else {
-            setStatus("copy ok: " + srcName + " → " + destPath + "/" + name);
+            JOptionPane.showMessageDialog(this,
+                "Copied: " + srcName + "\n" + srcPath + " → " + destPath,
+                "Paste", JOptionPane.INFORMATION_MESSAGE);
         }
         refreshAll();
     }

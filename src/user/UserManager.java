@@ -1,16 +1,16 @@
 package user;
 
 import disk.DiskConstants;
-import fs.DirectoryEntry;
 import fs.FileSystem;
-import fs.PathResolver;
+import java.io.*;
 import java.util.*;
 
 /**
- * 用户管理器。管理用户注册、登录、登出。
- * 用户主目录创建在 /home/ 下。
+ * 用户管理器。用户数据持久化到 users.dat。
  */
 public class UserManager {
+
+    private static final String USERS_FILE = "users.dat";
 
     private final FileSystem fs;
     private final Map<String, User> userCache;
@@ -21,13 +21,48 @@ public class UserManager {
         this.fs = fs;
         this.userCache = new LinkedHashMap<>();
         this.currentUser = null;
-        this.nextUserId = 1;
 
-        // root 是系统管理员，home 设为 "/"，不占用 /home 目录
-        addUserInternal("root", "root123", (byte) DiskConstants.ROOT_USER_ID, "/");
-        addUserInternal("admin", "admin123", (byte) 1);
-        addUserInternal("user1", "111111", (byte) 2);
-        nextUserId = 3;
+        if (!loadUsers()) {
+            addUserInternal("root", "root123", (byte) DiskConstants.ROOT_USER_ID, "/");
+            addUserInternal("admin", "admin123", (byte) 1);
+            addUserInternal("user1", "111111", (byte) 2);
+            nextUserId = 3;
+            saveUsers();
+        }
+    }
+
+    private boolean loadUsers() {
+        File f = new File(USERS_FILE);
+        if (!f.exists()) return false;
+        try (BufferedReader br = new BufferedReader(new FileReader(f))) {
+            String line;
+            byte maxId = 0;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+                String[] p = line.split("\\|");
+                if (p.length < 4) continue;
+                byte id = Byte.parseByte(p[0]);
+                userCache.put(p[1], new User(id, p[1], p[2], p[3]));
+                if (id > maxId) maxId = id;
+            }
+            nextUserId = (byte) (maxId + 1);
+            return !userCache.isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void saveUsers() {
+        try (PrintWriter pw = new PrintWriter(new FileWriter(USERS_FILE))) {
+            pw.println("# userId|username|passwordHash|homeDir");
+            for (User u : userCache.values()) {
+                pw.println((u.getUserId() & 0xFF) + "|" + u.getUsername()
+                        + "|" + u.getPasswordHash() + "|" + u.getHomeDirectory());
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to save users: " + e.getMessage());
+        }
     }
 
     public String login(String username, String password) {
@@ -54,6 +89,7 @@ public class UserManager {
 
         addUserInternal(username, password, nextUserId);
         nextUserId++;
+        saveUsers();
         return "Register ok. Please login.";
     }
 

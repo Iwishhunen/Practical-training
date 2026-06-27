@@ -263,7 +263,7 @@ public class FileTreePanel extends JPanel {
         DirNode(String n, int b, boolean d, boolean r, String f, int o) {
             name = n; dirBlock = b; isDir = d; isRoot = r; fullPath = f; owner = o;
         }
-        @Override public String toString() { return isRoot ? name : name + " (own:" + owner + ")"; }
+        @Override public String toString() { return name; }
     }
 
     static class DirTreeCellRenderer extends DefaultTreeCellRenderer {
